@@ -35,6 +35,7 @@ import StatsPanel from './components/StatsPanel';
 import TypingArea from './components/TypingArea';
 import HistoryTable from './components/HistoryTable';
 import Confetti from './components/Confetti';
+import ImprovementGuide from './components/ImprovementGuide';
 
 export default function App() {
   // Config & Customization States
@@ -197,18 +198,76 @@ export default function App() {
     return matchCount;
   };
 
+  // Alignment helper that allows skipping specified punctuation characters
+  const getAlignedTypedText = (rawInput: string, targetText: string): string => {
+    const OPTIONAL_CHARS = [',', ':', "'", '"', ';', '‘', '’', '“', '”', '`', '«', '»', '—', '-'];
+    
+    let targetIdx = 0;
+    let result = '';
+    
+    for (let inputIdx = 0; inputIdx < rawInput.length; inputIdx++) {
+      const inputChar = rawInput[inputIdx];
+      
+      // Auto-advance target index over any optional characters that the user did NOT type
+      while (
+        targetIdx < targetText.length && 
+        OPTIONAL_CHARS.includes(targetText[targetIdx]) && 
+        targetText[targetIdx] !== inputChar
+      ) {
+        result += targetText[targetIdx];
+        targetIdx++;
+      }
+      
+      if (targetIdx < targetText.length) {
+        const targetChar = targetText[targetIdx];
+        if (inputChar === targetChar) {
+          result += targetChar;
+          targetIdx++;
+        } else {
+          // Mismatch
+          result += inputChar;
+          targetIdx++;
+        }
+      } else {
+        result += inputChar;
+      }
+    }
+
+    // Auto-advance any remaining optional trailing characters at the end
+    while (
+      targetIdx < targetText.length && 
+      (OPTIONAL_CHARS.includes(targetText[targetIdx]) || ['.', '!', '?'].includes(targetText[targetIdx]))
+    ) {
+      result += targetText[targetIdx];
+      targetIdx++;
+    }
+    
+    return result;
+  };
+
   // Keystroke value analysis & error detection
-  const handleTypedTextChange = (newText: string) => {
+  const handleTypedTextChange = (rawInput: string) => {
     if (gameState !== 'playing') return;
 
-    const isAddition = newText.length > typedText.length;
+    const targetText = currentQuote.text;
+    const alignedText = getAlignedTypedText(rawInput, targetText);
+
+    // Completion is checked on the aligned text matching targetText fully
+    const isCompleted = alignedText === targetText;
+
+    const isAddition = alignedText.length > typedText.length;
     
     if (isAddition) {
-      const lastCharIndex = newText.length - 1;
-      const expectedChar = currentQuote.text[lastCharIndex];
-      const actualChar = newText[lastCharIndex];
+      let hasErrorInStroke = false;
+      // Evaluate correctness of all newly added characters in the aligned text
+      for (let i = typedText.length; i < alignedText.length; i++) {
+        if (alignedText[i] !== targetText[i]) {
+          hasErrorInStroke = true;
+          break;
+        }
+      }
 
-      if (actualChar === expectedChar) {
+      if (!hasErrorInStroke) {
         sounds.playKey();
       } else {
         setErrors((prev) => prev + 1);
@@ -216,10 +275,10 @@ export default function App() {
       }
     }
 
-    setTypedText(newText);
+    setTypedText(alignedText);
 
     // Finish Condition
-    if (newText === currentQuote.text) {
+    if (isCompleted) {
       const finishTime = Date.now();
       setEndTime(finishTime);
       setGameState('finished');
@@ -551,6 +610,14 @@ export default function App() {
 
           </aside>
         </div>
+
+        {/* Ways to Improve Typing Speed */}
+        <ImprovementGuide 
+          lastWpm={history[0]?.wpm}
+          lastAccuracy={history[0]?.accuracy}
+          lastErrors={history[0]?.errors}
+          hasFinishedLastRace={history.length > 0}
+        />
       </main>
 
       {/* Persistent Elegant Footer */}
