@@ -7,7 +7,7 @@ export type RacerType = 'horse' | 'car' | 'rocket';
 
 export type Language = 'mn' | 'en';
 
-export type Difficulty = 'easy' | 'medium' | 'hard';
+export type Difficulty = 'easy' | 'medium' | 'hard' | 'impossible';
 
 export type GameState = 'idle' | 'countdown' | 'playing' | 'finished';
 

@@ -158,10 +158,12 @@ export default function TypingArea({
             </span>
             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
               quote.difficulty === 'easy' ? 'bg-emerald-500/10 text-emerald-400' :
-              quote.difficulty === 'medium' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'
+              quote.difficulty === 'medium' ? 'bg-amber-500/10 text-amber-400' :
+              quote.difficulty === 'hard' ? 'bg-rose-500/10 text-rose-400' : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
             }`}>
               {quote.difficulty === 'easy' ? 'Амархан' :
-               quote.difficulty === 'medium' ? 'Дундаж' : 'Хэцүү'}
+               quote.difficulty === 'medium' ? 'Дундаж' :
+               quote.difficulty === 'hard' ? 'Хэцүү' : 'Боломжгүй'}
             </span>
           </div>
         </div>

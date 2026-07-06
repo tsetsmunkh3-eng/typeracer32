@@ -34,6 +34,7 @@ import RaceTrack from './components/RaceTrack';
 import StatsPanel from './components/StatsPanel';
 import TypingArea from './components/TypingArea';
 import HistoryTable from './components/HistoryTable';
+import Confetti from './components/Confetti';
 
 export default function App() {
   // Config & Customization States
@@ -274,6 +275,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-200 flex flex-col justify-between font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
+      <Confetti active={gameState === 'finished'} />
       
       {/* Primary Header Bar */}
       <header className="flex items-center justify-between px-6 py-5 md:px-8 md:py-6 border-b border-slate-800 bg-[#1e293b]">
@@ -388,8 +390,8 @@ export default function App() {
                   {/* Select Difficulty */}
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold text-slate-400 font-sans">Хүндрэлийн түвшин:</label>
-                    <div className="grid grid-cols-3 gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
-                      {(['easy', 'medium', 'hard'] as Difficulty[]).map((d) => (
+                    <div className="grid grid-cols-4 gap-1 md:gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                      {(['easy', 'medium', 'hard', 'impossible'] as Difficulty[]).map((d) => (
                         <button
                           key={d}
                           onClick={() => {
@@ -402,7 +404,7 @@ export default function App() {
                               : 'text-slate-400 hover:text-white'
                           }`}
                         >
-                          {d === 'easy' ? 'Амархан' : d === 'medium' ? 'Дундаж' : 'Хэцүү'}
+                          {d === 'easy' ? 'Амархан' : d === 'medium' ? 'Дундаж' : d === 'hard' ? 'Хэцүү' : 'Боломжгүй'}
                         </button>
                       ))}
                     </div>

@@ -82,6 +82,19 @@ export const DEFAULT_QUOTES: QuoteItem[] = [
     lang: "mn",
     difficulty: "hard"
   },
+  // Impossible (Complex punctuations & symbols & long length)
+  {
+    text: "Хорвоогийн хамгийн хүнд бичвэрийг 99.9% нарийвчлалтай шивэхэд: Нар, Сар, Одон орон, Газар шорооны хувьсал лугаа адил төвлөрөл шаардана (Жишээ нь: 'Байгаль-Орчин', 123-р сургууль, @Твиттер/Фэйсбүүк, $100.50)!",
+    author: "Шивэлтийн сорилт",
+    lang: "mn",
+    difficulty: "impossible"
+  },
+  {
+    text: "Монгол хэлний өвөрмөц хэлцүүд: 'Аргагүй амраг', 'Эрээгүй хэрүүл', 'Шударга ёс' зэрэг холбоо үгс, цэг, таслал, хашилт тэмдэг («...»), зураас (—) зэргийг туйлын зөв, тууштай бичих нь таныг супер түвшинд хүргэнэ.",
+    author: "Эх хэлний соёл",
+    lang: "mn",
+    difficulty: "impossible"
+  },
 
   // --- ENGLISH QUOTES (en) ---
   // Easy (Short)
@@ -146,5 +159,18 @@ export const DEFAULT_QUOTES: QuoteItem[] = [
     author: "Ralph Waldo Emerson",
     lang: "en",
     difficulty: "hard"
+  },
+  // Impossible (Symbols, numbers, complex typography)
+  {
+    text: "The dynamic multi-threaded CPU executed 1,500,000 instructions/sec while utilizing 98.7% of L1/L2 caches; this successfully minimized system latency (i.e. <0.05ms) by ~12.5% under heavy stress!",
+    author: "System Benchmarks",
+    lang: "en",
+    difficulty: "impossible"
+  },
+  {
+    text: "Whether 'tis nobler in the mind to suffer the slings and arrows of outrageous fortune, or to take arms against a sea of troubles, and by opposing end them? To die: to sleep; no more; and by a sleep to say we end!",
+    author: "William Shakespeare (Hamlet)",
+    lang: "en",
+    difficulty: "impossible"
   }
 ];
