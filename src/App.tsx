@@ -232,6 +232,17 @@ export default function App() {
     }
   };
 
+  // Restart the current quote from scratch
+  const handleRestartSameQuote = () => {
+    setTypedText('');
+    setErrors(0);
+    setStartTime(null);
+    setEndTime(null);
+    setElapsedSeconds(0);
+    setCountdown(3);
+    setGameState('countdown');
+  };
+
   // Multiplayer client logic
   const handleJoinRoom = (code: string) => {
     if (!mpName.trim()) {
@@ -1023,6 +1034,8 @@ export default function App() {
               onTypedTextChange={handleTypedTextChange}
               onStartGame={handleStartGame}
               onResetGame={handleResetGame}
+              onRestartSameQuote={handleRestartSameQuote}
+              isMultiplayer={isMultiplayer}
             />
 
             {/* Stats Dashboard Grid */}
@@ -1097,18 +1110,29 @@ export default function App() {
 
             {/* Reset / Skip options if in active play state */}
             {gameState === 'playing' && (
-              <div className="flex items-center justify-between px-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-2">
                 <p className="text-xs text-slate-400 font-sans flex items-center gap-1.5">
-                  <Info className="w-3.5 h-3.5 text-indigo-400" />
+                  <Info className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                   <span>Бичиж дуустал талбар идэвхтэй байна. Алдаа гарвал <b>Backspace</b> дарж засна уу.</span>
                 </p>
-                <button
-                  onClick={handleResetGame}
-                  className="text-xs text-slate-400 hover:text-rose-400 font-bold transition-colors flex items-center gap-1 cursor-pointer font-sans"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Бууж өгөх / Дахин эхлэх</span>
-                </button>
+                <div className="flex items-center gap-4 self-end">
+                  {!isMultiplayer && (
+                    <button
+                      onClick={handleRestartSameQuote}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 font-bold transition-colors flex items-center gap-1 cursor-pointer font-sans"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-indigo-400 animate-spin-slow" />
+                      <span>Ижил бичвэрийг дахин эхлэх</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={handleResetGame}
+                    className="text-xs text-slate-400 hover:text-rose-400 font-bold transition-colors flex items-center gap-1 cursor-pointer font-sans"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Бууж өгөх / Шинэ бичвэр</span>
+                  </button>
+                </div>
               </div>
             )}
           </section>

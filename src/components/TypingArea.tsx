@@ -5,7 +5,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, RotateCcw, Keyboard, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
+import { Play, RotateCcw, RefreshCw, Keyboard, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
 import { QuoteItem, GameState } from '../types';
 import { sounds } from '../utils/audio';
 
@@ -17,6 +17,8 @@ interface TypingAreaProps {
   onTypedTextChange: (text: string) => void;
   onStartGame: () => void;
   onResetGame: () => void;
+  onRestartSameQuote?: () => void;
+  isMultiplayer?: boolean;
 }
 
 export default function TypingArea({
@@ -26,7 +28,9 @@ export default function TypingArea({
   typedText,
   onTypedTextChange,
   onStartGame,
-  onResetGame
+  onResetGame,
+  onRestartSameQuote,
+  isMultiplayer = false
 }: TypingAreaProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -203,40 +207,54 @@ export default function TypingArea({
 
         {/* Playing state active typing input */}
         {gameState === 'playing' && (
-          <div className="relative w-full">
-            <input
-              ref={inputRef}
-              type="text"
-              id="typeracer-input-field"
-              value={typedText}
-              onChange={handleInputChange}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setIsFocused(false)}
-              autoComplete="off"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck="false"
-              placeholder="Дээрх өгүүлбэрийг алдаагүй, хурдан бичнэ үү..."
-              className={`w-full p-4 md:p-5 rounded-2xl bg-slate-900 text-white font-mono text-base md:text-lg border transition-all outline-none ${
-                hasError 
-                  ? 'border-rose-500/60 bg-rose-950/10 focus:border-rose-500 shadow-[0_0_15px_rgba(239,68,68,0.15)]' 
-                  : 'border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-[0_4px_12px_rgba(0,0,0,0.2)]'
-              }`}
-            />
-            {/* Real-time floating status badge */}
-            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none select-none">
-              {hasError ? (
-                <div className="px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold font-sans flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  <span>Алдаа засна уу</span>
-                </div>
-              ) : typedText.length > 0 ? (
-                <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold font-sans flex items-center gap-1 animate-pulse">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Зөв байна!</span>
-                </div>
-              ) : null}
+          <div className="flex gap-3 items-center w-full">
+            <div className="relative flex-1">
+              <input
+                ref={inputRef}
+                type="text"
+                id="typeracer-input-field"
+                value={typedText}
+                onChange={handleInputChange}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck="false"
+                placeholder="Дээрх өгүүлбэрийг алдаагүй, хурдан бичнэ үү..."
+                className={`w-full p-4 md:p-5 rounded-2xl bg-slate-900 text-white font-mono text-base md:text-lg border transition-all outline-none ${
+                  hasError 
+                    ? 'border-rose-500/60 bg-rose-950/10 focus:border-rose-500 shadow-[0_0_15px_rgba(239,68,68,0.15)]' 
+                    : 'border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-[0_4px_12px_rgba(0,0,0,0.2)]'
+                }`}
+              />
+              {/* Real-time floating status badge */}
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none select-none">
+                {hasError ? (
+                  <div className="px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold font-sans flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span>Алдаа засна уу</span>
+                  </div>
+                ) : typedText.length > 0 ? (
+                  <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold font-sans flex items-center gap-1 animate-pulse">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Зөв байна!</span>
+                  </div>
+                ) : null}
+              </div>
             </div>
+
+            {/* Quick Restart same quote button */}
+            {onRestartSameQuote && !isMultiplayer && (
+              <button
+                type="button"
+                onClick={onRestartSameQuote}
+                title="Эхнээс нь дахин эхлүүлэх (Ижил текст)"
+                className="p-4 md:p-5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-indigo-400 hover:border-indigo-500/50 transition-all cursor-pointer flex items-center justify-center shrink-0 shadow-lg"
+              >
+                <RotateCcw className="w-5 h-5" />
+              </button>
+            )}
           </div>
         )}
 
@@ -252,14 +270,28 @@ export default function TypingArea({
                 <p className="text-xs text-slate-400 font-sans">Доорх статистикоос та шивэх хурдны үзүүлэлтээ харна уу.</p>
               </div>
             </div>
-            <button
-              id="btn-play-again"
-              onClick={onResetGame}
-              className="px-6 py-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700/60 font-bold text-white hover:text-white transition-all flex items-center justify-center gap-2 cursor-pointer text-base font-sans"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Дахин тоглох</span>
-            </button>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              {onRestartSameQuote && !isMultiplayer && (
+                <button
+                  id="btn-retry-same"
+                  onClick={onRestartSameQuote}
+                  className="px-5 py-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700/60 font-bold text-slate-300 hover:text-white transition-all flex items-center justify-center gap-2 cursor-pointer text-sm md:text-base font-sans"
+                >
+                  <RefreshCw className="w-4 h-4 text-indigo-400" />
+                  <span>Ижил текстээр уралдах</span>
+                </button>
+              )}
+              
+              <button
+                id="btn-play-again"
+                onClick={onResetGame}
+                className="px-6 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-bold text-white hover:text-white transition-all flex items-center justify-center gap-2 cursor-pointer text-sm md:text-base font-sans shadow-lg shadow-indigo-600/20"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>{isMultiplayer ? "Буцах" : "Шинэ бичвэрээр тоглох"}</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
