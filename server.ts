@@ -6,9 +6,20 @@
 import express from "express";
 import path from "path";
 import http from "http";
+import fs from "fs";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer as createViteServer } from "vite";
 import { DEFAULT_QUOTES } from "./src/data";
+
+function logToFile(msg: string) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  try {
+    fs.appendFileSync(path.join(process.cwd(), "server.log"), line);
+  } catch (err) {
+    console.error("Failed to write log to file:", err);
+  }
+  console.log(msg);
+}
 
 interface Player {
   id: string;
@@ -50,19 +61,32 @@ async function startServer() {
 
   // Handle WS upgrade
   server.on("upgrade", (request, socket, head) => {
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit("connection", ws, request);
-    });
+    const url = request.url || "";
+    logToFile(`Received upgrade request for URL: ${url}`);
+    
+    const pathname = url.split("?")[0];
+    if (pathname === "/" || pathname === "/ws") {
+      logToFile("Handling upgrade for multiplayer socket...");
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit("connection", ws, request);
+      });
+    } else {
+      logToFile(`Ignored upgrade request for pathname: ${pathname}`);
+      socket.destroy();
+    }
   });
 
   // Map of client WS to player info
   const clients = new Map<WebSocket, { lobbyId: string; playerId: string }>();
 
-  wss.on("connection", (ws: WebSocket) => {
+  wss.on("connection", (ws: WebSocket, request) => {
+    logToFile(`WebSocket connection established! Remote address: ${request.socket.remoteAddress}`);
+    
     ws.on("message", (messageStr: string) => {
       try {
         const event = JSON.parse(messageStr);
         const { type, payload } = event;
+        logToFile(`WS Msg Recv: type=${type}`);
 
         if (type === "join") {
           const { lobbyId, playerName, avatar, lang, difficulty } = payload;
@@ -253,11 +277,13 @@ async function startServer() {
       }
     });
 
-    ws.on("close", () => {
+    ws.on("close", (code, reason) => {
+      logToFile(`WebSocket closed: code=${code}, reason=${reason}`);
       handleDisconnect(ws);
     });
 
-    ws.on("error", () => {
+    ws.on("error", (err) => {
+      logToFile(`WebSocket error: ${err}`);
       handleDisconnect(ws);
     });
   });
