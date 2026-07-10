@@ -23,14 +23,22 @@ import {
   ChevronRight,
   TrendingUp,
   Sliders,
-  Sparkle
+  Sparkle,
+  Users,
+  Copy,
+  LogOut,
+  Crown,
+  UserCheck,
+  RefreshCw,
+  User
 } from 'lucide-react';
-import { RacerType, Language, Difficulty, GameState, HistoryItem, QuoteItem } from './types';
+import { RacerType, Language, Difficulty, GameState, HistoryItem, QuoteItem, MultiplayerPlayer, MultiplayerLobby } from './types';
 import { DEFAULT_QUOTES } from './data';
 import { sounds } from './utils/audio';
 
 // Components
 import RaceTrack from './components/RaceTrack';
+import MultiplayerRaceTrack from './components/MultiplayerRaceTrack';
 import StatsPanel from './components/StatsPanel';
 import TypingArea from './components/TypingArea';
 import HistoryTable from './components/HistoryTable';
@@ -61,6 +69,21 @@ export default function App() {
 
   // History state
   const [history, setHistory] = useState<HistoryItem[]>([]);
+
+  // Multiplayer States
+  const [isMultiplayer, setIsMultiplayer] = useState(false);
+  const [lobby, setLobby] = useState<MultiplayerLobby | null>(null);
+  const [playerId, setPlayerId] = useState('');
+  const [roomCode, setRoomCode] = useState('');
+  const [createdRoomCode, setCreatedRoomCode] = useState('');
+  const [mpName, setMpName] = useState(() => {
+    return localStorage.getItem('typeracer_mp_name') || '';
+  });
+  const [mpAvatar, setMpAvatar] = useState('🚗');
+  const [ws, setWs] = useState<WebSocket | null>(null);
+  const [lobbyError, setLobbyError] = useState('');
+  const [isReady, setIsReady] = useState(false);
+  const [showMpSetup, setShowMpSetup] = useState(false);
 
   // Load history from localStorage on mount
   useEffect(() => {
@@ -130,6 +153,30 @@ export default function App() {
     };
   }, [gameState]);
 
+  // Synchronize progress to server in multiplayer
+  useEffect(() => {
+    if (isMultiplayer && ws && ws.readyState === WebSocket.OPEN && gameState === 'playing') {
+      const currentMatchingLength = getMatchingLength(typedText, currentQuote.text);
+      const progressRatio = currentQuote.text.length > 0 ? (currentMatchingLength / currentQuote.text.length) : 0;
+      const percentage = Math.round(progressRatio * 100);
+
+      const elapsed = elapsedSeconds || 1;
+      const liveWpm = Math.round((currentMatchingLength / 5) / (elapsed / 60));
+      const liveAccuracy = typedText.length > 0
+        ? Math.max(0, Math.min(Math.round((currentMatchingLength / typedText.length) * 100), 100))
+        : 100;
+
+      ws.send(JSON.stringify({
+        type: "progress",
+        payload: {
+          progress: percentage,
+          wpm: liveWpm,
+          accuracy: liveAccuracy
+        }
+      }));
+    }
+  }, [typedText, isMultiplayer, gameState, elapsedSeconds]);
+
   // Handle setting/saving custom text
   const handleSaveCustomText = () => {
     const cleanText = customText.trim().replace(/\s+/g, ' ');
@@ -182,6 +229,154 @@ export default function App() {
     setElapsedSeconds(0);
     if (!useCustomText && currentQuote.author !== 'Хэрэглэгчийн өөрийн бичв') {
       selectRandomQuote(language, difficulty);
+    }
+  };
+
+  // Multiplayer client logic
+  const handleJoinRoom = (code: string) => {
+    if (!mpName.trim()) {
+      setLobbyError("Нэрээ оруулна уу.");
+      return;
+    }
+    setLobbyError("");
+    const upperCode = code.trim().toUpperCase();
+    if (!upperCode) {
+      setLobbyError("Өрөөний кодоо оруулна уу.");
+      return;
+    }
+
+    localStorage.setItem('typeracer_mp_name', mpName.trim());
+
+    if (ws) {
+      ws.close();
+    }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}`;
+    const socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => {
+      socket.send(JSON.stringify({
+        type: "join",
+        payload: {
+          lobbyId: upperCode,
+          playerName: mpName.trim(),
+          avatar: mpAvatar,
+          lang: language,
+          difficulty: difficulty
+        }
+      }));
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "joined") {
+          setPlayerId(data.payload.playerId);
+          setCreatedRoomCode(data.payload.lobbyId);
+          setIsMultiplayer(true);
+          setCurrentQuote(data.payload.quote);
+          setTypedText("");
+          setErrors(0);
+          setElapsedSeconds(0);
+          setGameState("idle");
+        }
+        else if (data.type === "lobby_state") {
+          const serverLobby = data.payload;
+          setLobby(serverLobby);
+          
+          if (serverLobby.lang) setLanguage(serverLobby.lang);
+          if (serverLobby.difficulty) setDifficulty(serverLobby.difficulty);
+          if (serverLobby.quote) setCurrentQuote(serverLobby.quote);
+
+          if (serverLobby.state === 'countdown') {
+            setGameState('countdown');
+            setCountdown(serverLobby.countdown);
+          } else if (serverLobby.state === 'playing') {
+            setGameState('playing');
+          } else if (serverLobby.state === 'finished') {
+            setGameState('finished');
+          } else if (serverLobby.state === 'waiting') {
+            setGameState('idle');
+          }
+        }
+        else if (data.type === "race_started") {
+          setGameState("playing");
+          setTypedText("");
+          setErrors(0);
+          setElapsedSeconds(0);
+          setStartTime(data.payload.startTime);
+          setCurrentQuote(data.payload.quote);
+          sounds.playSuccess();
+        }
+        else if (data.type === "error") {
+          setLobbyError(data.payload);
+          socket.close();
+        }
+      } catch (e) {
+        console.error("Error parsing WS message:", e);
+      }
+    };
+
+    socket.onclose = () => {
+      setIsMultiplayer(false);
+      setLobby(null);
+      setWs(null);
+    };
+
+    socket.onerror = (err) => {
+      console.error("WS error:", err);
+      setLobbyError("Сэрвэртэй холбогдоход алдаа гарлаа.");
+    };
+
+    setWs(socket);
+  };
+
+  const handleCreateRoom = () => {
+    const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+    handleJoinRoom(code);
+  };
+
+  const handleToggleReady = () => {
+    const newReadyState = !isReady;
+    setIsReady(newReadyState);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: "ready",
+        payload: { isReady: newReadyState }
+      }));
+    }
+  };
+
+  const handleStartMpRace = () => {
+    if (ws && ws.readyState === WebSocket.OPEN && lobby?.players[playerId]?.isHost) {
+      ws.send(JSON.stringify({
+        type: "start_race"
+      }));
+    }
+  };
+
+  const handleLeaveLobby = () => {
+    if (ws) {
+      ws.close();
+    }
+    setIsMultiplayer(false);
+    setLobby(null);
+    setWs(null);
+    setGameState('idle');
+    setTypedText('');
+    setErrors(0);
+    setElapsedSeconds(0);
+  };
+
+  const handleLobbyConfigChange = (newLang: Language, newDiff: Difficulty) => {
+    setLanguage(newLang);
+    setDifficulty(newDiff);
+    if (ws && ws.readyState === WebSocket.OPEN && lobby?.players[playerId]?.isHost) {
+      ws.send(JSON.stringify({
+        type: "config_change",
+        payload: { lang: newLang, difficulty: newDiff }
+      }));
     }
   };
 
@@ -394,97 +589,370 @@ export default function App() {
           {/* LEFT: Game Space (8 Columns) */}
           <section className="lg:col-span-8 flex flex-col gap-6 md:gap-8">
             
-            {/* Top Config Row (Filters / Avatar Picker) */}
+            {/* Top Config Row (Filters / Avatar Picker / Multiplayer Mode) */}
             {gameState === 'idle' && (
               <div id="game-settings-panel" className="p-6 rounded-2xl bg-[#1e293b] border border-slate-800 flex flex-col gap-4 shadow-xl">
-                <div className="flex items-center gap-2 pb-3 border-b border-slate-800">
-                  <Sliders className="w-4 h-4 text-indigo-400" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">Тоглоомын Тохиргоо</span>
-                </div>
+                {/* Mode Tabs */}
+                {!isMultiplayer && (
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-slate-900 rounded-xl border border-slate-800">
+                    <button
+                      onClick={() => { setShowMpSetup(false); setUseCustomText(false); }}
+                      className={`py-2 text-xs md:text-sm font-bold font-sans rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        !showMpSetup 
+                          ? 'bg-indigo-600 text-white shadow-md' 
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>🎯 Ганцаарчилсан дасгал</span>
+                    </button>
+                    <button
+                      onClick={() => setShowMpSetup(true)}
+                      className={`py-2 text-xs md:text-sm font-bold font-sans rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        showMpSetup 
+                          ? 'bg-indigo-600 text-white shadow-md' 
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>👥 Олон тоглогчийн өрөө</span>
+                    </button>
+                  </div>
+                )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {/* Select Racer Avatar */}
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-slate-400 font-sans">Уралдах хөлөг:</label>
-                    <div className="grid grid-cols-3 gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
-                      {(['horse', 'car', 'rocket'] as RacerType[]).map((r) => (
-                        <button
-                          key={r}
-                          onClick={() => setRacer(r)}
-                          className={`py-1.5 rounded-lg text-center text-xs md:text-sm transition-all cursor-pointer ${
-                            racer === r 
-                              ? 'bg-indigo-600 text-white font-bold shadow-md' 
-                              : 'text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          {r === 'horse' ? '🐎 Морь' : r === 'car' ? '🚗 Машин' : '🚀 Сансар'}
-                        </button>
-                      ))}
+                {/* Conditional views */}
+                {isMultiplayer && lobby ? (
+                  /* MULTIPLAYER LOBBY SCREEN */
+                  <div className="flex flex-col gap-5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-5 h-5 text-indigo-400 animate-pulse" />
+                        <span className="text-sm font-extrabold uppercase tracking-wider text-slate-100 font-sans">
+                          Уралдааны Өрөө
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-400 font-sans">Өрөөний код:</span>
+                        <div className="flex items-center gap-1 bg-slate-900 px-3 py-1 rounded-lg border border-slate-800">
+                          <span className="font-mono font-black text-emerald-400 tracking-wider text-base">
+                            {lobby.id}
+                          </span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(lobby.id);
+                              sounds.playSuccess();
+                            }}
+                            className="p-1 hover:text-emerald-400 text-slate-500 transition-colors cursor-pointer"
+                            title="Кодыг хуулах"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Room Config Info / Controls */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-800/60">
+                      <div className="flex flex-col gap-1.5 text-xs">
+                        <span className="font-semibold text-slate-400 font-sans">Дасгалын хэл ба хүндрэл:</span>
+                        {lobby.players[playerId]?.isHost ? (
+                          <div className="flex gap-2">
+                            <select
+                              value={language}
+                              onChange={(e) => handleLobbyConfigChange(e.target.value as Language, difficulty)}
+                              className="bg-[#1e293b] border border-slate-800 rounded px-2 py-1 text-slate-200 outline-none text-xs font-sans cursor-pointer"
+                            >
+                              <option value="mn">Монгол</option>
+                              <option value="en">English</option>
+                            </select>
+                            <select
+                              value={difficulty}
+                              onChange={(e) => handleLobbyConfigChange(language, e.target.value as Difficulty)}
+                              className="bg-[#1e293b] border border-slate-800 rounded px-2 py-1 text-slate-200 outline-none text-xs font-sans cursor-pointer"
+                            >
+                              <option value="easy">Амархан</option>
+                              <option value="medium">Дундаж</option>
+                              <option value="hard">Хэцүү</option>
+                              <option value="impossible">Боломжгүй</option>
+                            </select>
+                          </div>
+                        ) : (
+                          <span className="font-bold font-sans text-indigo-400 flex items-center gap-1.5">
+                            <span>🌍</span> {lobby.lang === 'mn' ? 'Монгол' : 'English'} — {lobby.difficulty === 'easy' ? 'Амархан' : lobby.difficulty === 'medium' ? 'Дундаж' : lobby.difficulty === 'hard' ? 'Хэцүү' : 'Боломжгүй'}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-1 text-xs">
+                        <span className="font-semibold text-slate-400 font-sans">Өрөөний статус:</span>
+                        <span className="font-bold text-slate-300 font-sans flex items-center gap-1.5">
+                          <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping" />
+                          <span>Бусад уралдагчдыг хүлээж байна...</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Lobby Player List cards */}
+                    <div className="flex flex-col gap-2">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider font-sans">Холбогдсон тоглогчид:</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {(Object.values(lobby.players) as MultiplayerPlayer[]).map((p) => (
+                          <div 
+                            key={p.id} 
+                            className={`p-3 rounded-xl border flex items-center justify-between ${
+                              p.id === playerId 
+                                ? 'bg-indigo-950/20 border-indigo-500/30' 
+                                : 'bg-slate-900 border-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <span className="text-2xl">{p.avatar || '🚗'}</span>
+                              <div className="flex flex-col">
+                                <span className="text-xs font-bold text-slate-200 font-sans flex items-center gap-1">
+                                  {p.name}
+                                  {p.id === playerId && <span className="text-[9px] text-indigo-400 font-sans bg-indigo-500/10 px-1 py-0.2 rounded ml-1">Би</span>}
+                                </span>
+                                <span className="text-[10px] text-slate-500 font-mono">ID: {p.id}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {p.isHost ? (
+                                <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full flex items-center gap-1 font-sans">
+                                  <Crown className="w-3 h-3" /> Эзэн
+                                </span>
+                              ) : p.isReady ? (
+                                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full flex items-center gap-1 font-sans">
+                                  <UserCheck className="w-3 h-3" /> Бэлэн
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full flex items-center gap-1 font-sans">
+                                  ⏳ Бэлдэж буй
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Room lobby buttons */}
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+                      <button
+                        onClick={handleLeaveLobby}
+                        className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-bold rounded-xl font-sans transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Өрөөнөөс гарах</span>
+                      </button>
+
+                      <div className="flex items-center gap-2">
+                        {!lobby.players[playerId]?.isHost && (
+                          <button
+                            onClick={handleToggleReady}
+                            className={`px-5 py-2 text-xs font-extrabold rounded-xl font-sans transition-all flex items-center gap-1.5 cursor-pointer ${
+                              isReady 
+                                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20' 
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                            }`}
+                          >
+                            <UserCheck className="w-3.5 h-3.5" />
+                            <span>{isReady ? 'Бэлэн' : 'Бэлэн дарах'}</span>
+                          </button>
+                        )}
+
+                        {lobby.players[playerId]?.isHost && (
+                          <button
+                            onClick={handleStartMpRace}
+                            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold rounded-xl font-sans transition-all shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer animate-pulse"
+                          >
+                            <Play className="w-3.5 h-3.5" />
+                            <span>Уралдааныг эхлүүлэх</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-
-                  {/* Select Language */}
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-slate-400 font-sans">Дасгалын хэл:</label>
-                    <div className="grid grid-cols-2 gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
-                      {(['mn', 'en'] as Language[]).map((l) => (
-                        <button
-                          key={l}
-                          onClick={() => {
-                            setLanguage(l);
-                            setUseCustomText(false);
-                          }}
-                          className={`py-1.5 rounded-lg text-center text-sm font-semibold transition-all cursor-pointer ${
-                            language === l && !useCustomText
-                              ? 'bg-indigo-600 text-white font-bold' 
-                              : 'text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          {l === 'mn' ? 'Монгол' : 'English'}
-                        </button>
-                      ))}
+                ) : showMpSetup ? (
+                  /* MULTIPLAYER SETUP SCREEN */
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center gap-2 pb-3 border-b border-slate-800">
+                      <Users className="w-4 h-4 text-indigo-400" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">
+                        Олон тоглогчийн өрөөний тохиргоо
+                      </span>
                     </div>
-                  </div>
 
-                  {/* Select Difficulty */}
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-slate-400 font-sans">Хүндрэлийн түвшин:</label>
-                    <div className="grid grid-cols-4 gap-1 md:gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
-                      {(['easy', 'medium', 'hard', 'impossible'] as Difficulty[]).map((d) => (
-                        <button
-                          key={d}
-                          onClick={() => {
-                            setDifficulty(d);
-                            setUseCustomText(false);
-                          }}
-                          className={`py-1.5 rounded-lg text-center text-xs font-semibold transition-all cursor-pointer ${
-                            difficulty === d && !useCustomText
-                              ? 'bg-indigo-600 text-white font-bold' 
-                              : 'text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          {d === 'easy' ? 'Амархан' : d === 'medium' ? 'Дундаж' : d === 'hard' ? 'Хэцүү' : 'Боломжгүй'}
-                        </button>
-                      ))}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Name input */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-slate-400 font-sans">Таны нэр:</label>
+                        <div className="relative">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                          <input
+                            type="text"
+                            maxLength={15}
+                            value={mpName}
+                            onChange={(e) => setMpName(e.target.value)}
+                            placeholder="Өөрийн нэрээ оруулна уу"
+                            className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-sm font-sans text-slate-200 outline-none focus:border-indigo-500 transition-colors"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Avatar chooser */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-slate-400 font-sans">Дуртай аватар хөлөг сонгох:</label>
+                        <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
+                          {['🚗', '🏎️', '🚀', '🐎', '🛸', '🏍️', '🛹', '🐯', '🦖', '🦁'].map((emoji) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => setMpAvatar(emoji)}
+                              className={`py-1 text-center text-lg rounded transition-all cursor-pointer ${
+                                mpAvatar === emoji 
+                                  ? 'bg-indigo-600/30 scale-110 border border-indigo-500/40 shadow-inner' 
+                                  : 'hover:bg-slate-800'
+                              }`}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Switch to custom text button */}
-                <div className="flex items-center justify-between pt-2">
-                  <span className="text-[11px] md:text-xs text-slate-400 font-sans">Эсвэл өөрийн хүссэн бичвэрийг оруулан практик хийх боломжтой:</span>
-                  <button
-                    onClick={() => setUseCustomText(!useCustomText)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold font-sans border transition-all flex items-center gap-1.5 cursor-pointer ${
-                      useCustomText 
-                        ? 'bg-indigo-600/20 text-indigo-400 border-indigo-500/30' 
-                        : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Өөрийн бичвэр оруулах</span>
-                  </button>
-                </div>
+                    {/* Join / Create actions */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-800">
+                      {/* Join Room */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-slate-400 font-sans">Кодоор өрөөнд орох:</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Кодоо оруулна уу (жишээ: ABCD)"
+                            value={roomCode}
+                            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                            className="flex-1 px-3.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-sm font-mono tracking-widest text-slate-200 uppercase outline-none focus:border-indigo-500 transition-colors"
+                          />
+                          <button
+                            onClick={() => handleJoinRoom(roomCode)}
+                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg font-sans transition-colors cursor-pointer"
+                          >
+                            Өрөөнд орох
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Create Room */}
+                      <div className="flex flex-col justify-end">
+                        <button
+                          onClick={handleCreateRoom}
+                          className="w-full py-2.5 bg-slate-900 border border-slate-800 hover:border-indigo-500/40 text-indigo-400 font-bold text-xs rounded-lg font-sans transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow"
+                        >
+                          <span>👥 Өрөө шинээр үүсгэх</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Lobby joining error */}
+                    {lobbyError && (
+                      <p className="text-xs text-rose-400 font-sans flex items-center gap-1 mt-1 bg-rose-500/10 p-2 rounded-lg border border-rose-500/20">
+                        <AlertTriangle className="w-4 h-4" />
+                        <span>{lobbyError}</span>
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  /* SINGLE PLAYER PRACTICE SETUP */
+                  <>
+                    <div className="flex items-center gap-2 pb-3 border-b border-slate-800">
+                      <Sliders className="w-4 h-4 text-indigo-400" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">Тоглоомын Тохиргоо</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {/* Select Racer Avatar */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-slate-400 font-sans">Уралдах хөлөг:</label>
+                        <div className="grid grid-cols-3 gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                          {(['horse', 'car', 'rocket'] as RacerType[]).map((r) => (
+                            <button
+                              key={r}
+                              onClick={() => setRacer(r)}
+                              className={`py-1.5 rounded-lg text-center text-xs md:text-sm transition-all cursor-pointer ${
+                                racer === r 
+                                  ? 'bg-indigo-600 text-white font-bold shadow-md' 
+                                  : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {r === 'horse' ? '🐎 Морь' : r === 'car' ? '🚗 Машин' : '🚀 Сансар'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Select Language */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-slate-400 font-sans">Дасгалын хэл:</label>
+                        <div className="grid grid-cols-2 gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                          {(['mn', 'en'] as Language[]).map((l) => (
+                            <button
+                              key={l}
+                              onClick={() => {
+                                setLanguage(l);
+                                setUseCustomText(false);
+                              }}
+                              className={`py-1.5 rounded-lg text-center text-sm font-semibold transition-all cursor-pointer ${
+                                language === l && !useCustomText
+                                  ? 'bg-indigo-600 text-white font-bold' 
+                                  : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {l === 'mn' ? 'Монгол' : 'English'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Select Difficulty */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-slate-400 font-sans">Хүндрэлийн түвшин:</label>
+                        <div className="grid grid-cols-4 gap-1 md:gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                          {(['easy', 'medium', 'hard', 'impossible'] as Difficulty[]).map((d) => (
+                            <button
+                              key={d}
+                              onClick={() => {
+                                setDifficulty(d);
+                                setUseCustomText(false);
+                              }}
+                              className={`py-1.5 rounded-lg text-center text-xs font-semibold transition-all cursor-pointer ${
+                                difficulty === d && !useCustomText
+                                  ? 'bg-indigo-600 text-white font-bold' 
+                                  : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {d === 'easy' ? 'Амархан' : d === 'medium' ? 'Дундаж' : d === 'hard' ? 'Хэцүү' : 'Боломжгүй'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Switch to custom text button */}
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-[11px] md:text-xs text-slate-400 font-sans">Эсвэл өөрийн хүссэн бичвэрийг оруулан практик хийх боломжтой:</span>
+                      <button
+                        onClick={() => setUseCustomText(!useCustomText)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold font-sans border transition-all flex items-center gap-1.5 cursor-pointer ${
+                          useCustomText 
+                            ? 'bg-indigo-600/20 text-indigo-400 border-indigo-500/30' 
+                            : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                        }`}
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Өөрийн бичвэр оруулах</span>
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -528,11 +996,18 @@ export default function App() {
             )}
 
             {/* The Race Track */}
-            <RaceTrack 
-              progress={progressRatio} 
-              racer={racer} 
-              isFinished={gameState === 'finished'} 
-            />
+            {isMultiplayer ? (
+              <MultiplayerRaceTrack 
+                players={lobby?.players || {}} 
+                selfId={playerId} 
+              />
+            ) : (
+              <RaceTrack 
+                progress={progressRatio} 
+                racer={racer} 
+                isFinished={gameState === 'finished'} 
+              />
+            )}
 
             {/* Core Typing Interaction Box */}
             <TypingArea
@@ -553,6 +1028,67 @@ export default function App() {
               timeSec={elapsedSeconds}
               isFinished={gameState === 'finished'}
             />
+
+            {/* Multiplayer Leaderboard Podium */}
+            {isMultiplayer && lobby && gameState === 'finished' && (
+              <div className="p-5 rounded-2xl bg-[#1e293b]/80 border border-emerald-500/30 shadow-xl flex flex-col gap-3">
+                <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-1.5 font-sans">
+                  <span>🏆</span> Уралдааны Тэргүүлэгчид (Leaderboard)
+                </h3>
+                <div className="flex flex-col gap-2">
+                  {(Object.values(lobby.players) as MultiplayerPlayer[])
+                    .sort((a, b) => {
+                      if (a.finished && b.finished) return (a.finishTime || 0) - (b.finishTime || 0);
+                      if (a.finished) return -1;
+                      if (b.finished) return 1;
+                      return b.progress - a.progress;
+                    })
+                    .map((p, index) => {
+                      const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🏎️';
+                      return (
+                        <div 
+                          key={p.id}
+                          className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${
+                            p.id === playerId 
+                              ? 'bg-indigo-950/40 border-indigo-500/30 font-bold' 
+                              : 'bg-slate-900/50 border-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{medal}</span>
+                            <span className="text-sm font-sans text-slate-200">
+                              {p.name} {p.id === playerId && <span className="text-[10px] text-indigo-400 font-sans ml-1">(Би)</span>}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4 font-mono text-xs">
+                            {p.finished ? (
+                              <span className="text-emerald-400 font-bold">
+                                {((p.finishTime || 0) / 1000).toFixed(1)}с ({Math.round(p.wpm)} WPM)
+                              </span>
+                            ) : (
+                              <span className="text-slate-500">
+                                Шивж байна ({Math.round(p.progress)}%)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+                <div className="flex justify-end mt-2">
+                  {lobby.players[playerId]?.isHost && (
+                    <button
+                      onClick={handleStartMpRace}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg font-sans transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Дахин уралдах</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
 
             {/* Reset / Skip options if in active play state */}
             {gameState === 'playing' && (

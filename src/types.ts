@@ -28,3 +28,27 @@ export interface QuoteItem {
   lang: Language;
   difficulty: Difficulty;
 }
+
+export interface MultiplayerPlayer {
+  id: string;
+  name: string;
+  avatar: string; // Emoji
+  progress: number; // 0-100
+  wpm: number;
+  accuracy: number;
+  isHost: boolean;
+  isReady: boolean;
+  finished: boolean;
+  finishTime?: number;
+}
+
+export interface MultiplayerLobby {
+  id: string;
+  lang: Language;
+  difficulty: Difficulty;
+  quote: QuoteItem;
+  state: 'waiting' | 'countdown' | 'playing' | 'finished';
+  countdown: number;
+  players: Record<string, MultiplayerPlayer>;
+  startTime?: number;
+}
