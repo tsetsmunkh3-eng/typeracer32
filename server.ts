@@ -14,7 +14,7 @@ import { DEFAULT_QUOTES } from "./src/data";
 function logToFile(msg: string) {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
   try {
-    fs.appendFileSync(path.join(process.cwd(), "server.log"), line);
+    fs.appendFileSync(path.join(process.cwd(), "src", "server.log"), line);
   } catch (err) {
     console.error("Failed to write log to file:", err);
   }

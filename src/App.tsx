@@ -326,7 +326,7 @@ export default function App() {
 
     socket.onerror = (err) => {
       console.error("WS error:", err);
-      setLobbyError("Сэрвэртэй холбогдоход алдаа гарлаа.");
+      setLobbyError(`Сэрвэртэй холбогдоход алдаа гарлаа. (Холбогдох хаяг: ${wsUrl})`);
     };
 
     setWs(socket);
@@ -854,10 +854,15 @@ export default function App() {
 
                     {/* Lobby joining error */}
                     {lobbyError && (
-                      <p className="text-xs text-rose-400 font-sans flex items-center gap-1 mt-1 bg-rose-500/10 p-2 rounded-lg border border-rose-500/20">
-                        <AlertTriangle className="w-4 h-4" />
-                        <span>{lobbyError}</span>
-                      </p>
+                      <div className="flex flex-col gap-2 mt-1 bg-rose-500/10 p-3 rounded-lg border border-rose-500/20">
+                        <p className="text-xs text-rose-400 font-sans flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4 shrink-0" />
+                          <span className="font-semibold">{lobbyError}</span>
+                        </p>
+                        <div className="text-[11px] text-slate-400 font-sans leading-relaxed border-t border-rose-500/10 pt-2 mt-1">
+                          <strong className="text-amber-400">💡 Чухал зөвлөмж:</strong> Google AI Studio-ийн дотоод хамгаалалтын (iframe-ийн күүки хязгаарлалт) улмаас заримдаа сэрвэртэй холбогдох холболтыг браузер хаадаг байна. Хуудасны баруун дээд буланд байх <strong className="text-indigo-400">"Open in new tab" (Шинэ таб дээр нээх)</strong> товчлуур дээр дарж тогловол олон тоглогчийн горим ямар ч асуудалгүй ажиллах болно шүү! ⚽🚀
+                        </div>
+                      </div>
                     )}
                   </div>
                 ) : (
